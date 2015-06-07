@@ -1,0 +1,145 @@
+<html>
+	<head>
+		<!--<link rel="stylesheet" href="https://sp-bootstrap.global.ssl.fastly.net/5.2.0/sp-bootstrap.min.css"></link>-->
+
+		<script src="scripts/d3.js"></script>
+		<script src="scripts/utils.js"></script>
+		<script src="/socket.io/socket.io.js"></script>
+	</head>
+	<body>
+		<p></p>
+		<div class="container"></div>
+
+		<script type="text/javascript">
+			
+			if (typeof window !== 'undefined') {
+				window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame ||
+				window.webkitRequestAnimationFrame || window.msRequestAnimationFrame;
+			}
+
+			var windowSize = Utils.getWindowSize();
+      var w = windowSize.width * .9;
+      var h = windowSize.height * .9;
+      var maxRadius = 100;
+
+      //Define map projection
+      var projection = d3.geo.albersUsa()
+                   .translate([w/2, h/2])
+                   .scale([1000]);
+
+      //Define path generator
+      var path = d3.geo.path()
+               .projection(projection);
+               
+      //Create SVG element
+      var svg = d3.select("body")
+            .append("svg")
+            .attr("width", w)
+            .attr("height", h)
+            .style("display", "block")
+            .style("margin-left", "auto")
+            .style("margin-right", "auto");
+
+      d3.json("us-states.json", function(json) {
+      
+	      svg.selectAll("path")
+	             .data(json.features)
+	             .enter()
+	             .append("path")
+	             .attr("d", path)
+	             .style("fill", "#ccc");
+
+	    });
+     	
+      // TODO:
+      // get top 3 cities
+      // draw a label from center
+      // add stream count
+
+     	// val will be bw 1 and 100; use valScale to scale the radius.
+      var valScale = 2;
+
+			//var socket = io.connect('http://artiststreams.abeyu.cloud.spotify.net:3000/');
+			var socket = io.connect('http://localhost:3000/');
+			
+			socket.on('log', function (data) {
+				console.log(data);
+			});
+			socket.on('msg', function (data) {
+				updateLookup(data); // socket receives a message every second
+			});
+
+			var lookup = {};
+			var list = [];
+
+			function updateLookup(data) {
+
+				if (typeof lookup[data.geonameId] == "undefined") {
+					lookup[data.geonameId] = list.length;
+					list.push({
+						"geonameId": data.geonameId,
+						"lat": parseInt(data.lat),
+						"lon": parseInt(data.lng),
+						"val": parseInt(data.val),
+						"previousVal": parseInt(data.val),
+						"radius": parseInt(data.val)
+					});
+					
+					var marker = svg.selectAll("circle")
+						.data(list, function(d) { return d.geonameId; })
+						.enter()
+						.append("circle").attr("cx", function(d) {
+							return projection([d.lon, d.lat])[0];
+						})
+						.attr("cy", function(d) {
+							return projection([d.lon, d.lat])[1];
+						})
+						.attr("r", radiusSize)
+						.style("fill", "rgba(0, 162, 200, 0.5)")
+						.style("opacity", .75);
+
+				} else {
+
+					var index = lookup[data.geonameId];
+					list[index].val = parseInt(data.val);
+				}
+			}
+
+			/**
+			 * Tweens bw the previous val and new val.
+			 * requestAnimationFrame calls this function
+			 * 60 times per loop. 
+			 */
+			function radiusSize(d) {
+				d.previousVal -= (d.previousVal - d.val) / 60;
+				return d.previousVal * valScale; 
+			}
+
+			function loop() {
+
+				// data arrives once per second
+				// val = streams / 30 seconds
+
+				// decay
+				// if a city's streams stop, we need it to disappear
+				for (var i = 0; i < list.length; i++) {
+					if (list[i].val > 0) {
+						list[i].previousVal -= 1 / 60;
+					}
+				}
+
+				svg.selectAll("circle")
+						.data(list)
+						.attr("r", radiusSize);
+
+				if (typeof window.requestAnimationFrame !== 'undefined') {
+    			window.requestAnimationFrame(loop);
+  			}
+			}
+			loop();
+			
+			
+			
+</script>
+	</body>
+</html>
